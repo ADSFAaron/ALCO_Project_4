@@ -29,12 +29,12 @@ struct Opcode
 
 struct RS
 {
-	bool use;
-	string rs;
-	char operate;
+	bool use;		//判斷這個RS是否已經使用
+	string rs;		//RS1,RS2,RS3, ...
+	char operate;	//運算符號
 	int value1;
 	int value2;
-	int cyclenow;
+	int cyclenow;	//進buffer第幾個cycle可以跳出
 };
 
 void printCycle(vector<pair<int, string>>& rat, vector<RS>& rsADDSUB, vector<RS>& rsMULDIV, vector<pair<int, int>>& rf)
@@ -57,7 +57,7 @@ void printCycle(vector<pair<int, string>>& rat, vector<RS>& rsADDSUB, vector<RS>
 
 	for (int i = 0; i < rsADDSUB.size(); ++i)
 	{
-		cout << rs[i].rs << " | " << rs[i].operate << " | " << rs[i].value1 << " | " << rs[i].value2 << " | " << endl;
+		cout << rsADDSUB[i].rs << " | " << rsADDSUB[i].operate << " | " << rsADDSUB[i].value1 << " | " << rsADDSUB[i].value2 << " | " << endl;
 
 		if (i == 2)
 		{
@@ -79,18 +79,18 @@ void printCycle(vector<pair<int, string>>& rat, vector<RS>& rsADDSUB, vector<RS>
 	}
 }
 
-void inputRS(Opcode& opcode, vector<RS>& rs, vector<pair<int, int>>& rf,vector<pair<int, string>>& rat)
+//Issue Instruction to RS
+void inputRS(Opcode& opcode, vector<RS>& rs, vector<pair<int, int>>& rf, vector<pair<int, string>>& rat)
 {
-	
 	RS temp;
+	temp.use = true;
 	temp.operate = opcode.operate;
-	int rd = opcode.rd[1]-'0';
+	int rd = opcode.rd[1] - '0';
 	int rs1 = opcode.rs1[1] - '0';
+
 }
 
-
-
-
+//將Input分割後存入instruction中
 void SplitInstruction(Opcode& opcode, string& input)
 {
 	stringstream ss(input);
@@ -150,7 +150,7 @@ int main()
 			else if (instruction[i].name == "SUB" || instruction[i].name == "SUBI")
 			{
 				instruction[i].operate = '-';
-				SUB();
+				//SUB();
 			}
 			i++;
 		}
@@ -158,12 +158,12 @@ int main()
 			if (instruction[i].name == "MUL" || instruction[i].name == "MULI")
 			{
 				instruction[i].operate = '*';
-				MUL();
+				//MUL();
 			}
 			else if (instruction[i].name == "DIV" || instruction[i].name == "DIVI")
 			{
 				instruction[i].operate = '/';
-				DIV();
+				//DIV();
 			}
 			i++;
 		}

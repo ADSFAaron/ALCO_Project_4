@@ -1,6 +1,0 @@
-﻿  Source.cpp
-C:\Users\aaron\Documents\YZU 2-2\組合語言與計算機組織\Project 4\Project 4\Source.cpp(42,20): warning C4018: '<': signed/unsigned 不相符
-C:\Users\aaron\Documents\YZU 2-2\組合語言與計算機組織\Project 4\Project 4\Source.cpp(49,20): warning C4018: '<': signed/unsigned 不相符
-C:\Users\aaron\Documents\YZU 2-2\組合語言與計算機組織\Project 4\Project 4\Source.cpp(56,20): warning C4018: '<': signed/unsigned 不相符
-C:\Users\aaron\Documents\YZU 2-2\組合語言與計算機組織\Project 4\Project 4\Source.cpp(147,20): warning C4018: '<': signed/unsigned 不相符
-  Project 4.vcxproj -> C:\Users\aaron\Documents\YZU 2-2\組合語言與計算機組織\Project 4\Project 4\Debug\Project 4.exe
