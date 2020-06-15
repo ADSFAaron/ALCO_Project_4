@@ -23,306 +23,672 @@ Output是每一個cycle最後的結果。
 ## How to Use?
 Sample Input : 
 ```
-	li R1,0 //等同addi R1,R0,0
-	li R2,4
-Loop:
-	beq R1,R2,End
-	addi R2,R2,-1
-	beq R0,R0,Loop //R0就是我們常用的x0唷
-End:
+ADDI F1,F2,1
+SUB F1,F3,F4
+DIV F1,F2,F3
+MUL F2,F3,F4
+ADD F2,F4,F2
+ADDI F4,F1,2
+MUL F5,F5,F5
+ADD F1,F4,F4
+exit
 ```
 
 Sample Output :
-```
-//input: number of entries
-8
 
-entry: 2        beq R1,R2,End           //beq R1,R2,End 使用編號2的entry
-(00, SN, SN, SN, SN) N N                misprediction: 0
-//狀態            預測值 實際值            本預測器miss次數 (從頭統計至今)
-entry: 4        beq R0,R0,Loop
-(00, SN, SN, SN, SN) N T                misprediction: 1
-
-entry: 2        beq R1,R2,End
-(00, SN, SN, SN, SN) N N                misprediction: 0
-
-entry: 4        beq R0,R0,Loop
-(01, WN, SN, SN, SN) N T                misprediction: 2
-
-entry: 2        beq R1,R2,End
-(00, SN, SN, SN, SN) N N                misprediction: 0
-
-entry: 4        beq R0,R0,Loop
-(11, WN, WN, SN, SN) N T                misprediction: 3
-
-entry: 2        beq R1,R2,End
-(00, SN, SN, SN, SN) N N                misprediction: 0
-
-entry: 4        beq R0,R0,Loop
-(11, WN, WN, SN, WN) N T                misprediction: 4
-
-entry: 2        beq R1,R2,End
-(00, SN, SN, SN, SN) N T                misprediction: 1
-```
+過於冗長，這邊不顯示Sample Output。
 
 ## Code Explain
 
 ```c++
-#include<iostream>
-#include<iomanip>
-#include<fstream>
-#include<sstream>
-#include<string>
-#include<vector>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <fstream>
+#include <sstream>
+#include <utility>
+#include <iomanip>
 using namespace std;
-```
 
-`include<iostream>`  用來在Terminal輸入輸出
+//目前正在運行的cycle
+static int cycleNo = 0;
 
-`include<iomanip>`   用在輸出格式上，以方便觀看
+/* 每個operator 的cycle數
+*
+*	+ : 2
+*	- : 2
+*	* : 10
+*	/ : 40
+*/
+static int needCycle[4] = { 2,2,10,40 };
 
-`include<fstream>`  讀取檔案
-
-`include<sstream>`  分割string用
-
-`include<string>`  用來使用string的 operator[]、find 等功能
-
-`include<vector>`  儲存所有Opreator 和輸入的Instruction的空間
-
-
-```c++
-while (getline(infile, input))
+struct Opcode
 {
-	//label存在，將label名字和行數儲存
-	if (label_detected(input))
+	string name;
+	string rd;
+	string rs1;
+	string rs2;		// 在I-type當作 immediate
+	char operate;
+};
+
+struct RS
+{
+	bool use;		//判斷這個RS是否已經使用
+	string rs;		//RS1,RS2,RS3, ...
+	char operate;	//運算符號
+	string value1;
+	string value2;
+	int cyclenow;	//進buffer第幾個cycle可以跳出
+	int cyclebuffer;//值都有時，要等一個cycle才可以進buffer，這是存可以進buffer的cycle
+};
+
+vector<pair<int, string>> rat;		//Registration Source Table
+vector<pair<int, int>> rf;			//Register File
+vector<RS> rsADDSUB, rsMULDIV;		//rs for three add or sub, two for mul and div
+using RSiterator = RS*;
+RSiterator BufferADDSUB, BufferMULDIV;	//when value are all exist, enter to buffer to execute
+
+bool BufferADDSUBEmpty()
+{
+	if (BufferADDSUB == nullptr)
 	{
-		tmp.name = input;
-		tmp.pos = row;
-		Label.push_back(tmp);
+		return true;
 	}
 	else
 	{
-		stringstream ss(input);
+		return !BufferADDSUB->use;
+	}
+}
 
-		//分割instruction name
-		getline(ss, file.name, ' ');
+bool BufferMULDIVEmpty()
+{
+	if (BufferMULDIV == nullptr)
+	{
+		return true;
+	}
+	else
+	{
+		return !BufferMULDIV->use;
+	}
+}
 
-		if (file.name == "li")
+//四則運算
+int Arithmetic(RS& buffer)
+{
+	int total = 0;
+	if (buffer.operate - '+' == 0)
+	{
+		total = stoi(buffer.value1) + stoi(buffer.value2);
+	}
+	else if (buffer.operate - '-' == 0)
+	{
+		total = stoi(buffer.value1) - stoi(buffer.value2);
+	}
+	else if (buffer.operate - '*' == 0)
+	{
+		total = stoi(buffer.value1) * stoi(buffer.value2);
+	}
+	else if (buffer.operate - '/' == 0)
+	{
+		total = stoi(buffer.value1) / stoi(buffer.value2);
+	}
+
+	return total;
+}
+
+//Output Cycle Status
+void printCycle()
+{
+	cout << "Cycle : " << cycleNo << endl << endl;
+
+	cout << "__________RF_________" << endl;
+
+	for (int i = 0; i < rf.size(); ++i)
+	{
+		cout << setw(5) << "F" << rf[i].first << " | " << setw(5) << rf[i].second << " |" << endl;
+	}
+
+	cout << "_________RAT__________" << endl;
+
+	for (int i = 0; i < rat.size(); ++i)
+	{
+		cout << setw(5) << "F" << rat[i].first << " | " << setw(5) << rat[i].second << " |" << endl;
+	}
+
+	cout << "______________RS_______________" << endl;
+
+	for (int i = 0; i < rsADDSUB.size(); ++i)
+	{
+		if (rsADDSUB[i].use)
+			cout << setw(5) << rsADDSUB[i].rs << " | " << setw(1) << rsADDSUB[i].operate << " | " << setw(2) << rsADDSUB[i].value1 << " | " << setw(2) << rsADDSUB[i].value2 << " | " << endl;
+		else
+			cout << setw(5) << rsADDSUB[i].rs << " | " << setw(4) << " | " << setw(5) << " | " << setw(5) << " | " << endl;
+
+		if (i == 2)
 		{
-			getline(ss, file.reg1, ',');
-			getline(ss, file.imm, '\n');
+			for (int j = 0; j < 30; ++j)
+			{
+				cout << "-";
+			}
+
+			if (BufferADDSUBEmpty())
+				cout << endl << "Buffered : empty" << endl << endl;
+			else
+				cout << endl << "(" << BufferADDSUB->rs << ") " << BufferADDSUB->value1 << " " << BufferADDSUB->operate << " " << BufferADDSUB->value2 << endl << endl;
 		}
-		else if (file.name == "addi" || file.name == "beq")
+	}
+
+	for (int i = 0; i < rsMULDIV.size(); ++i)
+	{
+		if (rsMULDIV[i].use)
+			cout << setw(5) << rsMULDIV[i].rs << " | " << setw(1) << rsMULDIV[i].operate << " | " << setw(2) << rsMULDIV[i].value1 << " | " << setw(2) << rsMULDIV[i].value2 << " | " << endl;
+		else
+			cout << setw(5) << rsMULDIV[i].rs << " | " << setw(4) << " | " << setw(5) << " | " << setw(5) << " | " << endl;
+
+		if (i == 1)
 		{
-			getline(ss, file.reg1, ',');
-			getline(ss, file.reg2, ',');
-			getline(ss, file.imm, '\n');
+			for (int j = 0; j < 30; ++j)
+			{
+				cout << "-";
+			}
+
+			if (BufferMULDIVEmpty())
+				cout << endl << "Buffered : " << endl << endl;
+			else
+				cout << endl << "(" << BufferMULDIV->rs << ") " << BufferMULDIV->value1 << " " << BufferMULDIV->operate << " " << BufferMULDIV->value2 << endl << endl;
+		}
+	}
+}
+
+//Issue Instruction to RS
+void inputRS(Opcode& opcode, vector<RS>& rs)
+{
+	RS temp;
+	temp.use = true;
+	temp.operate = opcode.operate;
+	int rd = opcode.rd[1] - '0';
+	int rs1 = opcode.rs1[1] - '0';
+	int rs2;
+
+	//判斷rs2是否是純數字或有字母數字
+	istringstream convert(opcode.rs2);
+
+	//是數字
+	if (convert >> rs2)
+		temp.value2 = to_string(rs2);
+	else
+	{
+		//有字母和數字
+		rs2 = opcode.rs2[1] - '0';
+
+		//判斷RAT的F有沒有值 for value2
+		if (rat[rs2 - 1].second != "")
+		{
+			temp.value2 = rat[rs2 - 1].second;
 		}
 		else
 		{
-			cout << "error infile \n\n";
-			system("pause");
+			temp.value2 = to_string(rf[rs2 - 1].second);
 		}
-		++row;
 
-		//將Instruction儲存到vector中
-		implement.push_back(file);
 	}
-}
-```
-
-讀檔，將檔案的 RISC-V CODE 傳到C++ CODE，並分別不同的 instruction 到對應的 struct。
-
-```c++
-while (rowPos > -1)
-{
-	//判斷是哪個instruction
-	if (implement[rowPos].name == "li")
+	// 判斷RAT的F有沒有值 for value1
+	if (rat[rs1 - 1].second != "")
 	{
-		li(implement[rowPos].reg1, implement[rowPos].imm);
+		temp.value1 = rat[rs1 - 1].second;
 	}
-	else if (implement[rowPos].name == "addi")
+	else
 	{
-		addi(implement[rowPos].reg1, implement[rowPos].reg2, implement[rowPos].imm);
-	}
-	else if (implement[rowPos].name == "beq")
-	{
-		beq(implement[rowPos].reg1, implement[rowPos].reg2, implement[rowPos].imm);
+		temp.value1 = to_string(rf[rs1 - 1].second);
 	}
 
-	++rowPos;
-}
-```
-
-用rowPos判斷，從第一行開始跑，判斷 instruction ，並跑到對應的 function
-
-這邊以 beq 舉例
-
-```c++
-void beq(string rs1, string rs2, string label)
-{
-	//將 rs1 去掉第一個字，取數字
-	int r1 = atoi(rs1.substr(1, rs1.length() - 1).c_str());
-	int r2 = atoi(rs2.substr(1, rs2.length() - 1).c_str());
-
-	//呼叫下方
-	prediction(r1, r2, label);
-
-	//判斷是否是結束label
-	if (reg[r1] == reg[r2] && label == "End")
+	for (int i = 0; i < rs.size(); ++i)
 	{
-		rowPos = -2;
-		return;
-	}
-
-	//if(r1 == r2) 
-	//	jump to Label
-	for (int i = 0; i < Label.size(); ++i)
-	{
-		//判斷到對應的 label 並跳至指定行數
-		if (reg[r1] == reg[r2] && label == Label[i].name)
+		if (!rs[i].use)
 		{
-			//避免 function 跑完還有 +1 造成行數的錯誤
-			rowPos = Label[i].pos - 1;
+			temp.rs = rs[i].rs;
+			rs[i] = temp;
+			rs[i].use = true;
+			rs[i].cyclebuffer = cycleNo + 1;
+
+			rat[rd - 1].second = rs[i].rs;
+			break;
 		}
 	}
 }
-```
 
-function 內即為 instruction 實際運行的 C++ Code。
 
-```c++
-void prediction(int rs1, int rs2, string label)
+//將Input分割後存入instruction中
+void SplitInstruction(Opcode& opcode, string& input)
 {
-	string nowstate;	//判斷目前在哪個state
-	int statenum;		//判斷第幾個state
-	string result = "T";	//state實際結果
-	int beqCount = 0;	//判斷是跑which beq
+	stringstream ss(input);
 
-	//找instruction中所有beq
-	for (int i = 0; i < implement.size(); ++i)
+	getline(ss, opcode.name, ' ');
+	getline(ss, opcode.rd, ',');
+	getline(ss, opcode.rs1, ',');
+	getline(ss, opcode.rs2);
+}
+
+bool RSADDSUBFull()
+{
+	int count = 0;
+
+	for (int i = 0; i < rsADDSUB.size(); ++i)
 	{
-		if (implement[i].name == "beq")
+		if (rsADDSUB[i].use)
 		{
-			pred[beqCount].entry = i % entry;
-			pred[beqCount].label = implement[i].imm;
-			pred[beqCount].rs1 = implement[i].reg1;
-			pred[beqCount].rs2 = implement[i].reg2;
-			++beqCount;
+			++count;
 		}
 	}
 
-	int predtime = 0;
-
-	//找出所有beq
-	for (int i = 0; i < beqCount; ++i)
+	if (count == 3)
 	{
-		if (pred[i].label == label)
-		{
-			predtime = pred[i].entry;
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
 
-			//印出beq對應的entry
-			cout << "entry: " << predtime << setw(7) << "beq " << pred[i].rs1 << "," << pred[i].rs2 << "," << label << endl;
+bool RSMULDIVFull()
+{
+	int count = 0;
+
+	for (int i = 0; i < rsMULDIV.size(); ++i)
+	{
+		if (rsMULDIV[i].use)
+		{
+			++count;
+		}
+	}
+
+	if (count == 2)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+bool RSMULDIVEmpty()
+{
+	for (int i = 0; i < rsMULDIV.size(); ++i)
+	{
+		if (rsMULDIV[i].use)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool RSADDSUBEmpty()
+{
+	for (int i = 0; i < rsADDSUB.size(); ++i)
+	{
+		if (rsADDSUB[i].use)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool RSEmpty()
+{
+	return (RSADDSUBEmpty() && RSMULDIVEmpty());
+}
+
+void Issue(vector<Opcode>& instruction, int& i)
+{
+	if (instruction[i].name == "ADD" || instruction[i].name == "ADDI")
+	{
+		if (!RSADDSUBFull())
+		{
+			instruction[i].operate = '+';
+			inputRS(instruction[i], rsADDSUB);
+			++i;
+		}
+	}
+	else if (instruction[i].name == "SUB" || instruction[i].name == "SUBI")
+	{
+		if (!RSADDSUBFull())
+		{
+			instruction[i].operate = '-';
+			inputRS(instruction[i], rsADDSUB);
+			++i;
+		}
+	}
+	else if (instruction[i].name == "MUL" || instruction[i].name == "MULI")
+	{
+		if (!RSMULDIVFull())
+		{
+			instruction[i].operate = '*';
+			inputRS(instruction[i], rsMULDIV);
+			++i;
+		}
+	}
+	else if (instruction[i].name == "DIV" || instruction[i].name == "DIVI")
+	{
+		if (!RSMULDIVFull())
+		{
+			instruction[i].operate = '/';
+			inputRS(instruction[i], rsMULDIV);
+			++i;
+		}
+	}
+}
+
+void Execute()
+{
+	//有ADDSUB、MULDIV 兩個 ALU
+	if (BufferADDSUBEmpty())
+	{
+		int canBuffer = 0;
+		int tmp = 0;
+
+		//ADDSUB
+		for (int i = 0; i < rsADDSUB.size(); ++i)
+		{
+			canBuffer = 0;
+			tmp = 0;
+
+			//判斷rs1是否是純數字或有字母數字
+			istringstream convert1(rsADDSUB[i].value1);
+
+			//是數字
+			if (convert1 >> tmp)
+				canBuffer++;
+
+			//判斷rs2是否是純數字或有字母數字
+			istringstream convert2(rsADDSUB[i].value2);
+
+			//是數字
+			if (convert2 >> tmp)
+				canBuffer++;
+
+			//兩個數字都有
+			if (canBuffer == 2)
+			{
+				if (rsADDSUB[i].cyclebuffer <= cycleNo)
+				{
+					BufferADDSUB = &rsADDSUB[i];
+
+					if (BufferADDSUB->operate - '+' == 0)
+					{
+						//計算跳出的cycle數
+						BufferADDSUB->cyclenow = cycleNo + needCycle[0];
+					}
+					else
+					{
+						//計算跳出的cycle數
+						BufferADDSUB->cyclenow = cycleNo + needCycle[1];
+					}
+
+					BufferADDSUB->cyclebuffer = {};
+				}
+			}
+		}
+	}
+
+	if (BufferMULDIVEmpty())
+	{
+		int canBuffer = 0;
+		int tmp = 0;
+
+		//MULDIV
+		for (int i = 0; i < rsMULDIV.size(); ++i)
+		{
+			canBuffer = 0;
+			tmp = 0;
+
+			//判斷rs2是否是純數字或有字母數字
+			istringstream convert1(rsMULDIV[i].value1);
+
+			//是數字
+			if (convert1 >> tmp)
+				canBuffer++;
+
+			//判斷rs2是否是純數字或有字母數字
+			istringstream convert2(rsMULDIV[i].value2);
+
+			//是數字
+			if (convert2 >> tmp)
+				canBuffer++;
+
+			//兩個數字都有
+			if (canBuffer == 2)
+			{
+				if (rsMULDIV[i].cyclebuffer <= cycleNo)
+				{
+					BufferMULDIV = &rsMULDIV[i];
+
+					if (BufferMULDIV->operate - '*' == 0)
+					{
+						//計算跳出的cycle數
+						BufferMULDIV->cyclenow = cycleNo + needCycle[2];
+					}
+					else
+					{
+						//計算跳出的cycle數
+						BufferMULDIV->cyclenow = cycleNo + needCycle[3];
+					}
+
+					BufferMULDIV->cyclebuffer = {};
+				}
+
+
+			}
+		}
+	}
+}
+
+//Instruction離開RS時，要write result回RF 跟 找RS與RAT相符的代號
+void leaveRS()
+{
+	if (!BufferADDSUBEmpty())
+	{
+		//判斷Buffer內是否cycle已經跑完
+		if (BufferADDSUB->cyclenow == cycleNo)
+		{
+			//跑完，要讓RS清空
+			BufferADDSUB->use = false;
+			int result = Arithmetic(*BufferADDSUB);;
+
+			//先找RAT有無對應的值，有要改RF
+			for (int i = 0; i < rat.size(); ++i)
+			{
+				if (rat[i].second == BufferADDSUB->rs)
+				{
+					rf[rat[i].first - 1].second = result;
+					rat[i].second = "";
+					break;
+				}
+			}
+
+			//看RS內其他運算有無需要
+			for (int i = 0; i < rsADDSUB.size(); ++i)
+			{
+				if (rsADDSUB[i].value1 == BufferADDSUB->rs)
+				{
+					rsADDSUB[i].value1 = to_string(result);
+					rsADDSUB[i].cyclebuffer = cycleNo + 1;
+				}
+
+				if (rsADDSUB[i].value2 == BufferADDSUB->rs)
+				{
+					rsADDSUB[i].value2 = to_string(result);
+					rsADDSUB[i].cyclebuffer = cycleNo + 1;
+				}
+			}
+
+			for (int i = 0; i < rsMULDIV.size(); ++i)
+			{
+				if (rsMULDIV[i].value1 == BufferADDSUB->rs)
+				{
+					rsMULDIV[i].value1 = to_string(result);
+					rsMULDIV[i].cyclebuffer = cycleNo + 1;
+				}
+
+				if (rsMULDIV[i].value2 == BufferADDSUB->rs)
+				{
+					rsMULDIV[i].value2 = to_string(result);
+					rsMULDIV[i].cyclebuffer = cycleNo + 1;
+				}
+			}
+
+			//唉呦 要清跑完的那個RS拉
+			BufferADDSUB->cyclenow = 0;
+			BufferADDSUB->operate = '\0';
+			BufferADDSUB->value1 = {};
+			BufferADDSUB->value2 = {};
+			BufferADDSUB = nullptr;
+		}
+	}
+
+	if (!BufferMULDIVEmpty())
+	{
+		//判斷Buffer內是否cycle已經跑完
+		if (BufferMULDIV->cyclenow == cycleNo)
+		{
+			//跑完，要讓RS清空
+			BufferMULDIV->use = false;
+			int result = Arithmetic(*BufferMULDIV);
+
+			//先找RAT有無對應的值，有要改RF
+			for (int i = 0; i < rat.size(); ++i)
+			{
+				if (rat[i].second == BufferMULDIV->rs)
+				{
+					rf[rat[i].first - 1].second = result;
+					rat[i].second = "";
+					break;
+				}
+			}
+
+			//看RS內其他運算有無需要
+			for (int i = 0; i < rsADDSUB.size(); ++i)
+			{
+				if (rsADDSUB[i].value1 == BufferMULDIV->rs)
+				{
+					rsADDSUB[i].value1 = to_string(result);
+					rsADDSUB[i].cyclebuffer = cycleNo + 1;
+				}
+
+				if (rsADDSUB[i].value2 == BufferMULDIV->rs)
+				{
+					rsADDSUB[i].value2 = to_string(result);
+					rsADDSUB[i].cyclebuffer = cycleNo + 1;
+				}
+			}
+
+			for (int i = 0; i < rsMULDIV.size(); ++i)
+			{
+				if (rsMULDIV[i].value1 == BufferMULDIV->rs)
+				{
+					rsMULDIV[i].value1 = to_string(result);
+					rsMULDIV[i].cyclebuffer = cycleNo + 1;
+				}
+
+				if (rsMULDIV[i].value2 == BufferMULDIV->rs)
+				{
+					rsMULDIV[i].value2 = to_string(result);
+					rsMULDIV[i].cyclebuffer = cycleNo + 1;
+				}
+			}
+
+			//唉呦 要清跑完的那個RS拉
+			BufferMULDIV->cyclenow = 0;
+			BufferMULDIV->operate = '\0';
+			BufferMULDIV->value1 = {};
+			BufferMULDIV->value2 = {};
+			BufferMULDIV = nullptr;
+		}
+	}
+}
+
+int main()
+{
+	vector<Opcode> instruction;			//Instruction Queue 用
+	Opcode opInput;
+	string input;						//input handler
+
+	//將對應的RF值存入
+	for (int i = 0; i < 5; ++i)
+	{
+		rf.push_back(make_pair<int, int>(i + 1, 2 * i));
+	}
+
+	//RF
+	for (int i = 0; i < 5; ++i)
+	{
+		rat.push_back(make_pair<int, string>(i + 1, ""));
+	}
+
+	//create RS
+	for (int i = 1; i < 6; ++i)
+	{
+		RS tmp;
+		tmp.rs = "RS" + to_string(i);
+		tmp.use = false;
+		tmp.operate = '\0';
+		tmp.value1 = "";
+		tmp.value2 = "";
+
+		if (i < 4)
+		{
+			rsADDSUB.push_back(tmp);
+		}
+		else
+		{
+			rsMULDIV.push_back(tmp);
+		}
+	}
+
+	while (true)
+	{
+		getline(cin, input);
+
+		if (input != "exit")
+		{
+			SplitInstruction(opInput, input);
+
+			instruction.push_back(opInput);
+		}
+		else
+		{
 			break;
 		}
 	}
 
-	//判斷 2-bit history 為哪個
-	if (State[predtime].his[0] == "N")
-		State[predtime].pred1 = 0;
-	else
-		State[predtime].pred1 = 1;
+	int i = 0;
 
-	if (State[predtime].his[1] == "N")
-		State[predtime].pred2 = 0;
-	else
-		State[predtime].pred2 = 1;
-
-	//按照2-bit history設定目前state
-	if (State[predtime].pred2 == 0 && State[predtime].pred1 == 0)
+	do
 	{
-		nowstate = "00";
-		statenum = 0;
-	}
-	else if (State[predtime].pred2 == 0 && State[predtime].pred1 == 1)
-	{
-		nowstate = "01";
-		statenum = 1;
-	}
-	else if (State[predtime].pred2 == 1 && State[predtime].pred1 == 0)
-	{
-		nowstate = "10";
-		statenum = 2;
-	}
-	else
-	{
-		nowstate = "11";
-		statenum = 3;
-	}
+		++cycleNo;
 
-	// 預測是N or T
-	if (State[predtime].state[statenum] == "SN" || State[predtime].state[statenum] == "WN")
-		State[predtime].pred = "N";
-	else
-		State[predtime].pred = "T";
+		leaveRS();
 
-	// 輸出結果
-	cout << "(" << nowstate << ", " << State[predtime].state[0] << ", " << State[predtime].state[1] << ", " << State[predtime].state[2] << ", " << State[predtime].state[3] << ") "
-		<< State[predtime].pred << " ";
-
-	// 實際beq結果
-	if (reg[rs1] == reg[rs2])
-	{
-		result = "T";
-
-		// 改變state裡的狀態
-		if (result == State[predtime].pred)
+		if (instruction.size() > i)
 		{
-			if (State[predtime].state[statenum] == "WT")
-				State[predtime].state[statenum] = "ST";
+			Issue(instruction, i);
 		}
-		else
-		{
-			if (State[predtime].state[statenum] == "SN")
-				State[predtime].state[statenum] = "WN";
-			else if (State[predtime].state[statenum] == "WN")
-				State[predtime].state[statenum] = "WT";
-			State[predtime].miss++;
-		}
-	}
-	else
-	{
-		result = "N";
 
-		//改變state狀態
-		if (result == State[predtime].pred)
-		{
-			if (State[predtime].state[statenum] == "WN")
-				State[predtime].state[statenum] = "SN";
-		}
-		else
-		{
-			if (State[predtime].state[statenum] == "ST")
-				State[predtime].state[statenum] = "WT";
-			else if (State[predtime].state[statenum] == "WT")
-				State[predtime].state[statenum] = "WN";
+		Execute();
 
-			State[predtime].miss++;
-		}
-	}
+		printCycle();
+		system("pause");
 
-	cout << result << setw(18) << "misprediction: " << State[predtime].miss << endl << endl;
+	} while (!RSEmpty());
 
-	State[predtime].his[1] = State[predtime].his[0];
-	State[predtime].his[0] = result;
+
+	system("pause");
+	return 0;
 }
-
 ```
 
-Prediction 首先判斷是否有足夠的 entry 給每一個branch predictor，沒有則用同一個
-
-預設原本的 2-bit history 為 00，後面的則依之後的實際結果作為 2-bit history
-
-預測結果為 2-bit history 對應到的 state，與實際結果比較後，計算是否 misprediction
-
-最後 State 依照預測成功 or 失敗的結果，改變那個 entry 的 Predictor state
