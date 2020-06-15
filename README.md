@@ -49,10 +49,31 @@ Sample Output :
 #include <utility>
 #include <iomanip>
 using namespace std;
+```
 
+`include<iostream>`  用來在Terminal輸入輸出
+
+`include<string>`   用來使用string的功能
+
+`include<vector>`   儲存Instruction,RS...等
+
+`include<fstream>`  沒用，忘記刪了
+
+`include<sstream>`  分割string用
+
+`include<utility>`  皓皓改
+
+`include<iomanipy>`  用在輸出格式上，以方便閱讀
+
+
+```
 //目前正在運行的cycle
 static int cycleNo = 0;
+```
 
+總cycle數
+
+```
 /* 每個operator 的cycle數
 *
 *	+ : 2
@@ -61,7 +82,11 @@ static int cycleNo = 0;
 *	/ : 40
 */
 static int needCycle[4] = { 2,2,10,40 };
+```
 
+各個Instruction的執行cycle，由左至右為，ADD SUB MUL DIV。
+
+```
 struct Opcode
 {
 	string name;
@@ -135,7 +160,9 @@ int Arithmetic(RS& buffer)
 
 	return total;
 }
-
+```
+實際運算Instruction執行的結果
+```
 //Output Cycle Status
 void printCycle()
 {
@@ -199,7 +226,9 @@ void printCycle()
 		}
 	}
 }
-
+```
+print function。
+```
 //Issue Instruction to RS
 void inputRS(Opcode& opcode, vector<RS>& rs)
 {
@@ -256,7 +285,9 @@ void inputRS(Opcode& opcode, vector<RS>& rs)
 		}
 	}
 }
-
+```
+Issue進RS的Function
+```
 
 //將Input分割後存入instruction中
 void SplitInstruction(Opcode& opcode, string& input)
@@ -383,7 +414,9 @@ void Issue(vector<Opcode>& instruction, int& i)
 		}
 	}
 }
-
+```
+讓程式讀取Instruction判斷加減乘除以及進入哪個ALU
+```
 void Execute()
 {
 	//有ADDSUB、MULDIV 兩個 ALU
@@ -487,7 +520,9 @@ void Execute()
 		}
 	}
 }
-
+```
+判斷RS是否有Instruction能進入Buffer，是的話進入Buffer且開始計算幾個cycle後執行完畢。
+```
 //Instruction離開RS時，要write result回RF 跟 找RS與RAT相符的代號
 void leaveRS()
 {
@@ -611,7 +646,15 @@ void leaveRS()
 		}
 	}
 }
+```
+Buffer內的Instruction要write result回RF跟RS的Function
 
+如果Rat有對應的RS，傳回RF，RAT清空。
+
+尋找ALU內是否有需要的RS，有的話改成計算完的值。
+
+最後清空RS跟Buffer的位置出來。
+```
 int main()
 {
 	vector<Opcode> instruction;			//Instruction Queue 用
@@ -665,7 +708,9 @@ int main()
 			break;
 		}
 	}
-
+```
+input Instruction，分裝成我們各別需要的資訊儲存好。
+```
 	int i = 0;
 
 	do
@@ -685,7 +730,9 @@ int main()
 		system("pause");
 
 	} while (!RSEmpty());
-
+```
+計算cycle，呼叫function的主要迴圈。
+```
 
 	system("pause");
 	return 0;
