@@ -17,7 +17,7 @@ static int cycleNo = 0;
 *	* : 10
 *	/ : 40
 */
-static int needCycle[4] = { 2,2,8,40 };
+static int needCycle[4] = { 2,2,10,40 };
 
 struct Opcode
 {
@@ -36,6 +36,7 @@ struct RS
 	string value1;
 	string value2;
 	int cyclenow;	//進buffer第幾個cycle可以跳出
+	int cyclebuffer;//值都有時，要等一個cycle才可以進buffer，這是存可以進buffer的cycle
 };
 
 vector<pair<int, string>> rat;		//Registration Source Table
@@ -43,6 +44,30 @@ vector<pair<int, int>> rf;			//Register File
 vector<RS> rsADDSUB, rsMULDIV;		//rs for three add or sub, two for mul and div
 using RSiterator = RS*;
 RSiterator BufferADDSUB, BufferMULDIV;	//when value are all exist, enter to buffer to execute
+
+bool BufferADDSUBEmpty()
+{
+	if (BufferADDSUB == nullptr)
+	{
+		return true;
+	}
+	else
+	{
+		return !BufferADDSUB->use;
+	}
+}
+
+bool BufferMULDIVEmpty()
+{
+	if (BufferMULDIV == nullptr)
+	{
+		return true;
+	}
+	else
+	{
+		return !BufferMULDIV->use;
+	}
+}
 
 //四則運算
 int Arithmetic(RS& buffer)
@@ -102,7 +127,11 @@ void printCycle()
 			{
 				cout << "-";
 			}
-			cout << endl << "Buffered : " << endl << endl;
+
+			if (BufferADDSUBEmpty())
+				cout << endl << "Buffered : empty" << endl << endl;
+			else
+				cout << endl << "(" << BufferADDSUB->rs << ") " << BufferADDSUB->value1 << " " << BufferADDSUB->operate << " " << BufferADDSUB->value2 << endl << endl;
 		}
 	}
 
@@ -119,7 +148,11 @@ void printCycle()
 			{
 				cout << "-";
 			}
-			cout << endl << "Buffered : " << endl << endl;
+
+			if (BufferMULDIVEmpty())
+				cout << endl << "Buffered : " << endl << endl;
+			else
+				cout << endl << "(" << BufferMULDIV->rs << ") " << BufferMULDIV->value1 << " " << BufferMULDIV->operate << " " << BufferMULDIV->value2 << endl << endl;
 		}
 	}
 }
@@ -139,13 +172,13 @@ void inputRS(Opcode& opcode, vector<RS>& rs)
 
 	//是數字
 	if (convert >> rs2)
-		temp.value2 = rs2;
+		temp.value2 = to_string(rs2);
 	else
 	{
 		//有字母和數字
 		rs2 = opcode.rs2[1] - '0';
 
-		//判斷RAT的F有沒有值
+		//判斷RAT的F有沒有值 for value2
 		if (rat[rs2 - 1].second != "")
 		{
 			temp.value2 = rat[rs2 - 1].second;
@@ -156,9 +189,15 @@ void inputRS(Opcode& opcode, vector<RS>& rs)
 		}
 
 	}
-
-	//從rf取值
-	temp.value1 = to_string(rf[rs1 - 1].second);
+	// 判斷RAT的F有沒有值 for value1
+	if (rat[rs1 - 1].second != "")
+	{
+		temp.value1 = rat[rs1 - 1].second;
+	}
+	else
+	{
+		temp.value1 = to_string(rf[rs1 - 1].second);
+	}
 
 	for (int i = 0; i < rs.size(); ++i)
 	{
@@ -166,19 +205,14 @@ void inputRS(Opcode& opcode, vector<RS>& rs)
 		{
 			temp.rs = rs[i].rs;
 			rs[i] = temp;
+			rs[i].use = true;
+			rs[i].cyclebuffer = cycleNo + 1;
 
 			rat[rd - 1].second = rs[i].rs;
 			break;
 		}
 	}
-
-	//rat change
-
-	printCycle();
-
-	system("pause");
 }
-
 
 
 //將Input分割後存入instruction中
@@ -307,16 +341,6 @@ void Issue(vector<Opcode>& instruction, int& i)
 	}
 }
 
-bool BufferADDSUBEmpty()
-{
-	return !BufferADDSUB->use;
-}
-
-bool BufferMULDIVEmpty()
-{
-	return !BufferMULDIV->use;
-}
-
 void Execute()
 {
 	//有ADDSUB、MULDIV 兩個 ALU
@@ -331,7 +355,7 @@ void Execute()
 			canBuffer = 0;
 			tmp = 0;
 
-			//判斷rs2是否是純數字或有字母數字
+			//判斷rs1是否是純數字或有字母數字
 			istringstream convert1(rsADDSUB[i].value1);
 
 			//是數字
@@ -348,19 +372,23 @@ void Execute()
 			//兩個數字都有
 			if (canBuffer == 2)
 			{
-				BufferADDSUB = &rsADDSUB[i];
-
-				if (BufferADDSUB->operate - '+' == 0)
+				if (rsADDSUB[i].cyclebuffer <= cycleNo)
 				{
-					//計算跳出的cycle數
-					BufferADDSUB->cyclenow = cycleNo + needCycle[0];
-				}
-				else
-				{
-					//計算跳出的cycle數
-					BufferADDSUB->cyclenow = cycleNo + needCycle[1];
-				}
+					BufferADDSUB = &rsADDSUB[i];
 
+					if (BufferADDSUB->operate - '+' == 0)
+					{
+						//計算跳出的cycle數
+						BufferADDSUB->cyclenow = cycleNo + needCycle[0];
+					}
+					else
+					{
+						//計算跳出的cycle數
+						BufferADDSUB->cyclenow = cycleNo + needCycle[1];
+					}
+
+					BufferADDSUB->cyclebuffer = {};
+				}
 			}
 		}
 	}
@@ -393,18 +421,25 @@ void Execute()
 			//兩個數字都有
 			if (canBuffer == 2)
 			{
-				BufferMULDIV = &rsMULDIV[i];
+				if (rsMULDIV[i].cyclebuffer <= cycleNo)
+				{
+					BufferMULDIV = &rsMULDIV[i];
 
-				if (BufferMULDIV->operate - '*' == 0)
-				{
-					//計算跳出的cycle數
-					BufferMULDIV->cyclenow = cycleNo + needCycle[2];
+					if (BufferMULDIV->operate - '*' == 0)
+					{
+						//計算跳出的cycle數
+						BufferMULDIV->cyclenow = cycleNo + needCycle[2];
+					}
+					else
+					{
+						//計算跳出的cycle數
+						BufferMULDIV->cyclenow = cycleNo + needCycle[3];
+					}
+
+					BufferMULDIV->cyclebuffer = {};
 				}
-				else
-				{
-					//計算跳出的cycle數
-					BufferMULDIV->cyclenow = cycleNo + needCycle[3];
-				}
+
+
 			}
 		}
 	}
@@ -413,95 +448,123 @@ void Execute()
 //Instruction離開RS時，要write result回RF 跟 找RS與RAT相符的代號
 void leaveRS()
 {
-	//判斷Buffer內是否cycle已經跑完
-	if (BufferADDSUB->cyclenow == cycleNo)
+	if (!BufferADDSUBEmpty())
 	{
-		//跑完，要讓RS清空
-		BufferADDSUB->use = false;
-		int result = 0;
-
-		//先找RAT有無對應的值，有要改RF
-		for (int i = 0; i < rat.size(); ++i)
+		//判斷Buffer內是否cycle已經跑完
+		if (BufferADDSUB->cyclenow == cycleNo)
 		{
-			if (rat[i].second == BufferADDSUB->rs)
-			{
-				result = Arithmetic(*BufferADDSUB);
-				rf[rat[i].first - 1].second = result;
-				break;
-			}
-		}
+			//跑完，要讓RS清空
+			BufferADDSUB->use = false;
+			int result = Arithmetic(*BufferADDSUB);;
 
-		//看RS內其他運算有無需要
-		for (int i = 0; i < rsADDSUB.size(); ++i)
-		{
-			if (rsADDSUB[i].value1 == BufferADDSUB->rs)
+			//先找RAT有無對應的值，有要改RF
+			for (int i = 0; i < rat.size(); ++i)
 			{
-				rsADDSUB[i].value1 = to_string(result);
-			}
-
-			if (rsADDSUB[i].value2 == BufferADDSUB->rs)
-			{
-				rsADDSUB[i].value2 = to_string(result);
-			}
-		}
-
-		for (int i = 0; i < rsMULDIV.size(); ++i)
-		{
-			if (rsMULDIV[i].value1 == BufferADDSUB->rs)
-			{
-				rsMULDIV[i].value1 = to_string(result);
+				if (rat[i].second == BufferADDSUB->rs)
+				{
+					rf[rat[i].first - 1].second = result;
+					rat[i].second = "";
+					break;
+				}
 			}
 
-			if (rsMULDIV[i].value2 == BufferADDSUB->rs)
+			//看RS內其他運算有無需要
+			for (int i = 0; i < rsADDSUB.size(); ++i)
 			{
-				rsMULDIV[i].value2 = to_string(result);
+				if (rsADDSUB[i].value1 == BufferADDSUB->rs)
+				{
+					rsADDSUB[i].value1 = to_string(result);
+					rsADDSUB[i].cyclebuffer = cycleNo + 1;
+				}
+
+				if (rsADDSUB[i].value2 == BufferADDSUB->rs)
+				{
+					rsADDSUB[i].value2 = to_string(result);
+					rsADDSUB[i].cyclebuffer = cycleNo + 1;
+				}
 			}
+
+			for (int i = 0; i < rsMULDIV.size(); ++i)
+			{
+				if (rsMULDIV[i].value1 == BufferADDSUB->rs)
+				{
+					rsMULDIV[i].value1 = to_string(result);
+					rsMULDIV[i].cyclebuffer = cycleNo + 1;
+				}
+
+				if (rsMULDIV[i].value2 == BufferADDSUB->rs)
+				{
+					rsMULDIV[i].value2 = to_string(result);
+					rsMULDIV[i].cyclebuffer = cycleNo + 1;
+				}
+			}
+
+			//唉呦 要清跑完的那個RS拉
+			BufferADDSUB->cyclenow = 0;
+			BufferADDSUB->operate = '\0';
+			BufferADDSUB->value1 = {};
+			BufferADDSUB->value2 = {};
+			BufferADDSUB = nullptr;
 		}
 	}
 
-	//判斷Buffer內是否cycle已經跑完
-	if (BufferMULDIV->cyclenow == cycleNo)
+	if (!BufferMULDIVEmpty())
 	{
-		//跑完，要讓RS清空
-		BufferMULDIV->use = false;
-		int result = 0;
-
-		//先找RAT有無對應的值，有要改RF
-		for (int i = 0; i < rat.size(); ++i)
+		//判斷Buffer內是否cycle已經跑完
+		if (BufferMULDIV->cyclenow == cycleNo)
 		{
-			if (rat[i].second == BufferMULDIV->rs)
-			{
-				result = Arithmetic(*BufferMULDIV);
-				rf[rat[i].first - 1].second = result;
-				break;
-			}
-		}
+			//跑完，要讓RS清空
+			BufferMULDIV->use = false;
+			int result = Arithmetic(*BufferMULDIV);
 
-		//看RS內其他運算有無需要
-		for (int i = 0; i < rsADDSUB.size(); ++i)
-		{
-			if (rsADDSUB[i].value1 == BufferMULDIV->rs)
+			//先找RAT有無對應的值，有要改RF
+			for (int i = 0; i < rat.size(); ++i)
 			{
-				rsADDSUB[i].value1 = to_string(result);
-			}
-
-			if (rsADDSUB[i].value2 == BufferMULDIV->rs)
-			{
-				rsADDSUB[i].value2 = to_string(result);
-			}
-		}
-
-		for (int i = 0; i < rsMULDIV.size(); ++i)
-		{
-			if (rsMULDIV[i].value1 == BufferMULDIV->rs)
-			{
-				rsMULDIV[i].value1 = to_string(result);
+				if (rat[i].second == BufferMULDIV->rs)
+				{
+					rf[rat[i].first - 1].second = result;
+					rat[i].second = "";
+					break;
+				}
 			}
 
-			if (rsMULDIV[i].value2 == BufferMULDIV->rs)
+			//看RS內其他運算有無需要
+			for (int i = 0; i < rsADDSUB.size(); ++i)
 			{
-				rsMULDIV[i].value2 = to_string(result);
+				if (rsADDSUB[i].value1 == BufferMULDIV->rs)
+				{
+					rsADDSUB[i].value1 = to_string(result);
+					rsADDSUB[i].cyclebuffer = cycleNo + 1;
+				}
+
+				if (rsADDSUB[i].value2 == BufferMULDIV->rs)
+				{
+					rsADDSUB[i].value2 = to_string(result);
+					rsADDSUB[i].cyclebuffer = cycleNo + 1;
+				}
 			}
+
+			for (int i = 0; i < rsMULDIV.size(); ++i)
+			{
+				if (rsMULDIV[i].value1 == BufferMULDIV->rs)
+				{
+					rsMULDIV[i].value1 = to_string(result);
+					rsMULDIV[i].cyclebuffer = cycleNo + 1;
+				}
+
+				if (rsMULDIV[i].value2 == BufferMULDIV->rs)
+				{
+					rsMULDIV[i].value2 = to_string(result);
+					rsMULDIV[i].cyclebuffer = cycleNo + 1;
+				}
+			}
+
+			//唉呦 要清跑完的那個RS拉
+			BufferMULDIV->cyclenow = 0;
+			BufferMULDIV->operate = '\0';
+			BufferMULDIV->value1 = {};
+			BufferMULDIV->value2 = {};
+			BufferMULDIV = nullptr;
 		}
 	}
 }
@@ -566,6 +629,8 @@ int main()
 	{
 		++cycleNo;
 
+		leaveRS();
+
 		if (instruction.size() > i)
 		{
 			Issue(instruction, i);
@@ -573,7 +638,8 @@ int main()
 
 		Execute();
 
-		leaveRS();
+		printCycle();
+		system("pause");
 
 	} while (!RSEmpty());
 
