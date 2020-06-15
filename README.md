@@ -1,28 +1,24 @@
 # ALCO_Project_4
-Homework for Assembled Language and Computer Organization Project Three
+Homework for Assembled Language and Computer Organization Project four
 
 ## Project Goal
-可以將輸入的一段 RISC-V 組合語言的 code 將 branch 的 instruction 做 Prediction
+實作Instruction Scheduling
 
-Input : 一段 RISC-V 組合語言的 Code (需寫在test.txt檔裡面)， entry 數
+Input : instruction，結尾輸入exit。
 
-Output : entry 以及 Prediction 的 state 轉換，預測的狀態及實際狀態，每個 entry misprediction 的次數。
+Output : 每個cycle的狀態，RS RAT RF的改變。
 
-## Requirement
-:page_facing_up: 需先行建立一個 RISC V Instruction code 的檔案，並且檔名為 `test.txt` ，並且將 test.txt 儲存於與專案同個資料夾。
-
-:warning: RISC V Instruction code 最後結束的 Label 必須是 `End`。
 
 ## Project Method
-透過讀檔，將RISC-V code讀入程式中。
+輸入完instruction後，從Issue開始進入。
 
-實際做每一行RISC-V的實際運行內容。
+Execution判斷進入RS的Instruction能否進Buffer。
 
-在有 beq 的 function 中執行 Prediction 的程式。
+leaveRS判斷執行完的instruction是否需要write result回RS或RF，更新RAT。
 
-Prediction 處理 state 的轉換，判斷預測結果是否跟真實結果相符，以及 Output。
+做完後清除那個RS及Buffer。
 
-在 RISC-V 的程式跳到 END 後即結束。
+Output是每一個cycle最後的結果。
 
 ## How to Use?
 Sample Input : 
