@@ -51,15 +51,15 @@ Sample Output :
 using namespace std;
 ```
 
-`include<iostream>`  用來在Terminal輸入輸出
+`include<iostream>`  用來在 Terminal 輸入輸出
 
-`include<string>`   用來使用string的功能
+`include<string>`   使用 string 的功能
 
 `include<vector>`   儲存 Instruction, RS, RAT, ...等
 
 `include<fstream>`  沒用，忘記刪了
 
-`include<sstream>`  分割string用
+`include<sstream>`  分割 string 用
 
 `include<utility>`  用於 RAT、RF 的 pair<型態，型態>
 
@@ -71,7 +71,7 @@ using namespace std;
 static int cycleNo = 0;
 ```
 
-總cycle數
+總 Cycle 數
 
 ```c++
 /* 每個operator 的cycle數
@@ -114,7 +114,106 @@ using RSiterator = RS*;
 RSiterator BufferADDSUB, BufferMULDIV;	//when value are all exist, enter to buffer to execute
 ```
 
-宣告所需要用到的變數
+宣告所需要用到的變數和結構
+
+```c++
+int main()
+{
+	vector<Opcode> instruction;				//Instruction Queue 用
+	Opcode opInput;						//儲存進Instruction 暫時用
+	string input;						//input handler
+
+	//將對應的RF值存入
+	for (int i = 0; i < 5; ++i)
+	{
+		rf.push_back(make_pair<int, int>(i + 1, 2 * i));
+	}
+
+	//RF
+	for (int i = 0; i < 5; ++i)
+	{
+		rat.push_back(make_pair<int, string>(i + 1, ""));
+	}
+
+	//create RS
+	for (int i = 1; i < 6; ++i)
+	{
+		RS tmp;
+		tmp.rs = "RS" + to_string(i);
+		tmp.use = false;
+		tmp.operate = '\0';
+		tmp.value1 = "";
+		tmp.value2 = "";
+
+		if (i < 4)
+		{
+			rsADDSUB.push_back(tmp);
+		}
+		else
+		{
+			rsMULDIV.push_back(tmp);
+		}
+	}
+```
+
+建立 RS 所需的內容和 RF 值
+
+```c++
+	while (true)
+	{
+		getline(cin, input);
+
+		if (input != "exit")
+		{
+			SplitInstruction(opInput, input);
+
+			instruction.push_back(opInput);
+		}
+		else
+		{
+			break;
+		}
+	}
+```
+
+input Instruction，透過 SplitInstruction() 分割成需要的資訊。
+
+```c++
+//將Input分割後存入instruction中
+void SplitInstruction(Opcode& opcode, string& input)
+{
+	stringstream ss(input);
+
+	getline(ss, opcode.name, ' ');
+	getline(ss, opcode.rd, ',');
+	getline(ss, opcode.rs1, ',');
+	getline(ss, opcode.rs2);
+}
+
+```
+
+```c++
+	int i = 0;
+
+	do
+	{
+		++cycleNo;
+
+		leaveRS();
+
+		if (instruction.size() > i)
+		{
+			Issue(instruction, i);
+		}
+
+		Execute();
+
+		printCycle();
+
+	} while (!RSEmpty());
+```
+
+計算 cycle，呼叫 function 的主要迴圈。
 
 ```c++
 bool BufferADDSUBEmpty()
@@ -146,35 +245,6 @@ bool BufferMULDIVEmpty()
 判斷 Buffer 是否有指向 RS
 
 ```c++
-
-//四則運算
-int Arithmetic(RS& buffer)
-{
-	int total = 0;
-	if (buffer.operate - '+' == 0)
-	{
-		total = stoi(buffer.value1) + stoi(buffer.value2);
-	}
-	else if (buffer.operate - '-' == 0)
-	{
-		total = stoi(buffer.value1) - stoi(buffer.value2);
-	}
-	else if (buffer.operate - '*' == 0)
-	{
-		total = stoi(buffer.value1) * stoi(buffer.value2);
-	}
-	else if (buffer.operate - '/' == 0)
-	{
-		total = stoi(buffer.value1) / stoi(buffer.value2);
-	}
-
-	return total;
-}
-```
-
-實際運算Instruction執行的結果
-
-```
 //Output Cycle Status
 void printCycle()
 {
@@ -239,8 +309,54 @@ void printCycle()
 	}
 }
 ```
-print function。
+
+印出 Cycle 目前的 RAT RF RS 狀態
+
+```c++
+void Issue(vector<Opcode>& instruction, int& i)
+{
+	if (instruction[i].name == "ADD" || instruction[i].name == "ADDI")
+	{
+		if (!RSADDSUBFull())
+		{
+			instruction[i].operate = '+';
+			inputRS(instruction[i], rsADDSUB);
+			++i;
+		}
+	}
+	else if (instruction[i].name == "SUB" || instruction[i].name == "SUBI")
+	{
+		if (!RSADDSUBFull())
+		{
+			instruction[i].operate = '-';
+			inputRS(instruction[i], rsADDSUB);
+			++i;
+		}
+	}
+	else if (instruction[i].name == "MUL" || instruction[i].name == "MULI")
+	{
+		if (!RSMULDIVFull())
+		{
+			instruction[i].operate = '*';
+			inputRS(instruction[i], rsMULDIV);
+			++i;
+		}
+	}
+	else if (instruction[i].name == "DIV" || instruction[i].name == "DIVI")
+	{
+		if (!RSMULDIVFull())
+		{
+			instruction[i].operate = '/';
+			inputRS(instruction[i], rsMULDIV);
+			++i;
+		}
+	}
+}
 ```
+
+讓程式讀取 Instruction 判斷加減乘除以及進入哪個 ALU
+
+```c++
 //Issue Instruction to RS
 void inputRS(Opcode& opcode, vector<RS>& rs)
 {
@@ -283,6 +399,7 @@ void inputRS(Opcode& opcode, vector<RS>& rs)
 		temp.value1 = to_string(rf[rs1 - 1].second);
 	}
 
+	//尋找最小可以放入rs的空間
 	for (int i = 0; i < rs.size(); ++i)
 	{
 		if (!rs[i].use)
@@ -298,137 +415,10 @@ void inputRS(Opcode& opcode, vector<RS>& rs)
 	}
 }
 ```
-Issue進RS的Function
-```
 
-//將Input分割後存入instruction中
-void SplitInstruction(Opcode& opcode, string& input)
-{
-	stringstream ss(input);
+Issue 進 RS 的 Function
 
-	getline(ss, opcode.name, ' ');
-	getline(ss, opcode.rd, ',');
-	getline(ss, opcode.rs1, ',');
-	getline(ss, opcode.rs2);
-}
-
-bool RSADDSUBFull()
-{
-	int count = 0;
-
-	for (int i = 0; i < rsADDSUB.size(); ++i)
-	{
-		if (rsADDSUB[i].use)
-		{
-			++count;
-		}
-	}
-
-	if (count == 3)
-	{
-		return true;
-	}
-	else
-	{
-		return false;
-	}
-}
-
-bool RSMULDIVFull()
-{
-	int count = 0;
-
-	for (int i = 0; i < rsMULDIV.size(); ++i)
-	{
-		if (rsMULDIV[i].use)
-		{
-			++count;
-		}
-	}
-
-	if (count == 2)
-	{
-		return true;
-	}
-	else
-	{
-		return false;
-	}
-}
-
-bool RSMULDIVEmpty()
-{
-	for (int i = 0; i < rsMULDIV.size(); ++i)
-	{
-		if (rsMULDIV[i].use)
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
-
-bool RSADDSUBEmpty()
-{
-	for (int i = 0; i < rsADDSUB.size(); ++i)
-	{
-		if (rsADDSUB[i].use)
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
-
-bool RSEmpty()
-{
-	return (RSADDSUBEmpty() && RSMULDIVEmpty());
-}
-
-void Issue(vector<Opcode>& instruction, int& i)
-{
-	if (instruction[i].name == "ADD" || instruction[i].name == "ADDI")
-	{
-		if (!RSADDSUBFull())
-		{
-			instruction[i].operate = '+';
-			inputRS(instruction[i], rsADDSUB);
-			++i;
-		}
-	}
-	else if (instruction[i].name == "SUB" || instruction[i].name == "SUBI")
-	{
-		if (!RSADDSUBFull())
-		{
-			instruction[i].operate = '-';
-			inputRS(instruction[i], rsADDSUB);
-			++i;
-		}
-	}
-	else if (instruction[i].name == "MUL" || instruction[i].name == "MULI")
-	{
-		if (!RSMULDIVFull())
-		{
-			instruction[i].operate = '*';
-			inputRS(instruction[i], rsMULDIV);
-			++i;
-		}
-	}
-	else if (instruction[i].name == "DIV" || instruction[i].name == "DIVI")
-	{
-		if (!RSMULDIVFull())
-		{
-			instruction[i].operate = '/';
-			inputRS(instruction[i], rsMULDIV);
-			++i;
-		}
-	}
-}
-```
-讓程式讀取Instruction判斷加減乘除以及進入哪個ALU
-```
+```c++
 void Execute()
 {
 	//有ADDSUB、MULDIV 兩個 ALU
@@ -533,8 +523,10 @@ void Execute()
 	}
 }
 ```
+
 判斷RS是否有Instruction能進入Buffer，是的話進入Buffer且開始計算幾個cycle後執行完畢。
-```
+
+```c++
 //Instruction離開RS時，要write result回RF 跟 找RS與RAT相符的代號
 void leaveRS()
 {
@@ -659,6 +651,7 @@ void leaveRS()
 	}
 }
 ```
+
 Buffer內的Instruction要write result回RF跟RS的Function
 
 如果Rat有對應的RS，傳回RF，RAT清空。
@@ -666,88 +659,110 @@ Buffer內的Instruction要write result回RF跟RS的Function
 尋找ALU內是否有需要的RS，有的話改成計算完的值。
 
 最後清空RS跟Buffer的位置出來。
-```
-int main()
+
+```c++
+//四則運算
+int Arithmetic(RS& buffer)
 {
-	vector<Opcode> instruction;			//Instruction Queue 用
-	Opcode opInput;
-	string input;						//input handler
-
-	//將對應的RF值存入
-	for (int i = 0; i < 5; ++i)
+	int total = 0;
+	if (buffer.operate - '+' == 0)
 	{
-		rf.push_back(make_pair<int, int>(i + 1, 2 * i));
+		total = stoi(buffer.value1) + stoi(buffer.value2);
+	}
+	else if (buffer.operate - '-' == 0)
+	{
+		total = stoi(buffer.value1) - stoi(buffer.value2);
+	}
+	else if (buffer.operate - '*' == 0)
+	{
+		total = stoi(buffer.value1) * stoi(buffer.value2);
+	}
+	else if (buffer.operate - '/' == 0)
+	{
+		total = stoi(buffer.value1) / stoi(buffer.value2);
 	}
 
-	//RF
-	for (int i = 0; i < 5; ++i)
-	{
-		rat.push_back(make_pair<int, string>(i + 1, ""));
-	}
-
-	//create RS
-	for (int i = 1; i < 6; ++i)
-	{
-		RS tmp;
-		tmp.rs = "RS" + to_string(i);
-		tmp.use = false;
-		tmp.operate = '\0';
-		tmp.value1 = "";
-		tmp.value2 = "";
-
-		if (i < 4)
-		{
-			rsADDSUB.push_back(tmp);
-		}
-		else
-		{
-			rsMULDIV.push_back(tmp);
-		}
-	}
-
-	while (true)
-	{
-		getline(cin, input);
-
-		if (input != "exit")
-		{
-			SplitInstruction(opInput, input);
-
-			instruction.push_back(opInput);
-		}
-		else
-		{
-			break;
-		}
-	}
-```
-input Instruction，分裝成我們各別需要的資訊儲存好。
-```
-	int i = 0;
-
-	do
-	{
-		++cycleNo;
-
-		leaveRS();
-
-		if (instruction.size() > i)
-		{
-			Issue(instruction, i);
-		}
-
-		Execute();
-
-		printCycle();
-		system("pause");
-
-	} while (!RSEmpty());
-```
-計算cycle，呼叫function的主要迴圈。
-```
-
-	system("pause");
-	return 0;
+	return total;
 }
 ```
 
+實際運算 Instruction 執行的結果
+
+```c++
+bool RSADDSUBFull()
+{
+	int count = 0;
+
+	for (int i = 0; i < rsADDSUB.size(); ++i)
+	{
+		if (rsADDSUB[i].use)
+		{
+			++count;
+		}
+	}
+
+	if (count == 3)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+bool RSMULDIVFull()
+{
+	int count = 0;
+
+	for (int i = 0; i < rsMULDIV.size(); ++i)
+	{
+		if (rsMULDIV[i].use)
+		{
+			++count;
+		}
+	}
+
+	if (count == 2)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+bool RSMULDIVEmpty()
+{
+	for (int i = 0; i < rsMULDIV.size(); ++i)
+	{
+		if (rsMULDIV[i].use)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool RSADDSUBEmpty()
+{
+	for (int i = 0; i < rsADDSUB.size(); ++i)
+	{
+		if (rsADDSUB[i].use)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool RSEmpty()
+{
+	return (RSADDSUBEmpty() && RSMULDIVEmpty());
+}
+```
+
+判斷 RS 狀態的 Function
