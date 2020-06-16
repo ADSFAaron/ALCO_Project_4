@@ -4,21 +4,21 @@ Homework for Assembled Language and Computer Organization Project four
 ## Project Goal
 實作Instruction Scheduling
 
-Input : instruction，結尾輸入exit。
+Input : RISC V Instruction，結尾輸入exit。
 
 Output : 每個cycle的狀態，RS RAT RF的改變。
 
 
 ## Project Method
-輸入完instruction後，從Issue開始進入。
+輸入完 Instruction 後，從 Issue 開始進入 RS。
 
-Execution判斷進入RS的Instruction能否進Buffer。
+Execution 判斷進入 RS 的 Instruction 能否進 Buffer。
 
-leaveRS判斷執行完的instruction是否需要write result回RS或RF，更新RAT。
+leaveRS 判斷執行完的 Instruction 是否需要 write result 回 RS 或 RF，更新RAT。
 
-做完後清除那個RS及Buffer。
+做完後清除該 Buffer 所指向的那個 RS。
 
-Output是每一個cycle最後的結果。
+Output 是每一個 Cycle 最後的結果。
 
 ## How to Use?
 Sample Input : 
@@ -36,7 +36,7 @@ exit
 
 Sample Output :
 
-過於冗長，這邊不顯示Sample Output。
+過於冗長，這邊不顯示 Sample Output。
 
 ## Code Explain
 
@@ -55,25 +55,25 @@ using namespace std;
 
 `include<string>`   用來使用string的功能
 
-`include<vector>`   儲存Instruction,RS...等
+`include<vector>`   儲存 Instruction, RS, RAT, ...等
 
 `include<fstream>`  沒用，忘記刪了
 
 `include<sstream>`  分割string用
 
-`include<utility>`  皓皓改
+`include<utility>`  用於 RAT、RF 的 pair<型態，型態>
 
-`include<iomanipy>`  用在輸出格式上，以方便閱讀
+`include<iomanip>`  用在輸出格式上，以方便閱讀
 
 
-```
+```c++
 //目前正在運行的cycle
 static int cycleNo = 0;
 ```
 
 總cycle數
 
-```
+```c++
 /* 每個operator 的cycle數
 *
 *	+ : 2
@@ -84,9 +84,9 @@ static int cycleNo = 0;
 static int needCycle[4] = { 2,2,10,40 };
 ```
 
-各個Instruction的執行cycle，由左至右為，ADD SUB MUL DIV。
+各個 Instruction 執行所需的 cycle 數，由左至右為，ADD SUB MUL DIV。
 
-```
+```c++
 struct Opcode
 {
 	string name;
@@ -100,19 +100,23 @@ struct RS
 {
 	bool use;		//判斷這個RS是否已經使用
 	string rs;		//RS1,RS2,RS3, ...
-	char operate;	//運算符號
+	char operate;		//運算符號
 	string value1;
 	string value2;
-	int cyclenow;	//進buffer第幾個cycle可以跳出
-	int cyclebuffer;//值都有時，要等一個cycle才可以進buffer，這是存可以進buffer的cycle
+	int cyclenow;		//進buffer第幾個cycle可以跳出
+	int cyclebuffer;	//值都有時，要等一個cycle才可以進buffer，這是存可以進buffer的cycle
 };
 
 vector<pair<int, string>> rat;		//Registration Source Table
-vector<pair<int, int>> rf;			//Register File
+vector<pair<int, int>> rf;		//Register File
 vector<RS> rsADDSUB, rsMULDIV;		//rs for three add or sub, two for mul and div
 using RSiterator = RS*;
 RSiterator BufferADDSUB, BufferMULDIV;	//when value are all exist, enter to buffer to execute
+```
 
+宣告所需要用到的變數
+
+```c++
 bool BufferADDSUBEmpty()
 {
 	if (BufferADDSUB == nullptr)
@@ -136,6 +140,12 @@ bool BufferMULDIVEmpty()
 		return !BufferMULDIV->use;
 	}
 }
+
+```
+
+判斷 Buffer 是否有指向 RS
+
+```c++
 
 //四則運算
 int Arithmetic(RS& buffer)
@@ -161,7 +171,9 @@ int Arithmetic(RS& buffer)
 	return total;
 }
 ```
+
 實際運算Instruction執行的結果
+
 ```
 //Output Cycle Status
 void printCycle()
